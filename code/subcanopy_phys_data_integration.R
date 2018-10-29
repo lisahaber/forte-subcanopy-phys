@@ -4,7 +4,8 @@
 ## FoRTE Subcanopy Physiology     ##
 ####################################
 
-# This code is my first attempt to extract and utilize Amax files from the shared FoRTE data drive.
+# This code is my first attempt to extract and utilize subcanopy physiology (LICOR 6400XT) files from the shared FoRTE data drive.
+
 # I am building this off Jeff Atkins' code from the FoRTE Canopy repo.
 
 # load required packages
@@ -18,7 +19,7 @@ require(ggplot2)
 # check drives
 drive_find(pattern = "subcanopy_leaf_physiology", n_max = 50)
 
-#Direct Google Drive link to "FoRTE/data"
+# Direct Google Drive link to "FoRTE/data"
 x <- as_id("https://drive.google.com/drive/folders/1YULT4fx50b1MXZNOywgEeosW0GkrUe9c?usp=sharing")
 
 # Uses x to "get" drive
@@ -27,27 +28,38 @@ drive_get(as_id(x))
 # lists what is in drive
 drive_ls(x)
 
-# id of drive with subcanopy phys data
+# set ID of drive with subcanopy phys data
 subcanopy.files <- as_id("https://drive.google.com/open?id=1Q2k5eSuk0Gr6d-lPECksonbP6FbNwmjz")
-drive_ls(subcanopy.files)
+
+# lists content of the subcanopy phys data drive
+subcanopy.files <- drive_ls(subcanopy.files, pattern = ".csv")
 files <- drive_ls(subcanopy.files)
 
-# create a data directory
-# dir.create("data/subcanopy_phys", showWarnings = FALSE)
-# 
-# for(f in files$name) {
-#   cat("Downloading", f, "...\n")
-#   drive_download(f, overwrite = TRUE)
-#   print(f)
+# #----- Function to loop through directory and call function to read licor data -----
+# read_licor_dir <- function(subcanopy.files) {
+#   subcanopy.files <- list.files(subcanopy.files, pattern = ".csv", full.names = TRUE)
+#   list <- lapply(subcanopy.files, read_licor_dir)
+#   bind_rows(list)
 # }
 # 
-# 
+
+# create a new data directory for files
+sub.files <- dir.create("data/subcanopy_phys", showWarnings = FALSE)
+
+for(f in sub.files$name) {
+  cat("Downloading", f, "...\n")
+  drive_download(f, overwrite = TRUE)
+  print(f)
+}
+
+
+
 
 
 
 ##################################################################
 ## working with LICOR 6400 XT .txt files                        ##
-## used advice from:                                            ##
+## advice from:                                                 ##
 ## http://www.ericrscott.com/2018/01/17/li-cor-wrangling/       ##
 ##################################################################
 text.raw <- read_file("licor.txt")
