@@ -9,125 +9,65 @@
 # I am building this off Jeff Atkins' code from the FoRTE Canopy repo.
 
 # load required packages
-library(plyr)
 library(dplyr)
 library(readr)
-require(tidyverse)
-require(googledrive)
-require(ggplot2)
+library(googledrive)
+library(ggplot2)
+library(tidyr)
+library(lubridate)
 
-# check drives
-drive_find(pattern = "subcanopy_leaf_physiology", n_max = 50)
+# Direct Google Drive link to "FoRTE/data/subcanopy_leaf_physiology"
+as_id("https://drive.google.com/drive/folders/1Q2k5eSuk0Gr6d-lPECksonbP6FbNwmjz") %>% 
+  drive_ls ->
+  gdfiles
 
-# Direct Google Drive link to "FoRTE/data"
-x <- as_id("https://drive.google.com/drive/folders/1YULT4fx50b1MXZNOywgEeosW0GkrUe9c?usp=sharing")
+# Create a new data directory for files, if necessary
+data_dir <- "data/"
+if(!dir.exists(data_dir)) dir.create(data_dir)
 
-# Uses x to "get" drive
-drive_get(as_id(x))
-
-# lists what is in drive
-drive_ls(x)
-
-# set ID of drive with subcanopy phys data
-subcanopy.files <- as_id("https://drive.google.com/open?id=1Q2k5eSuk0Gr6d-lPECksonbP6FbNwmjz")
-
-# lists content of the subcanopy phys data drive
-subcanopy.files <- drive_ls(subcanopy.files, pattern = ".csv")
-files <- drive_ls(subcanopy.files)
-
-# #----- Function to loop through directory and call function to read licor data -----
-# read_licor_dir <- function(subcanopy.files) {
-#   subcanopy.files <- list.files(subcanopy.files, pattern = ".csv", full.names = TRUE)
-#   list <- lapply(subcanopy.files, read_licor_dir)
-#   bind_rows(list)
-# }
-# 
-
-# create a new data directory for files
-sub.files <- dir.create("data/subcanopy_phys", showWarnings = FALSE)
-
-for(f in sub.files$name) {
-  cat("Downloading", f, "...\n")
-  drive_download(f, overwrite = TRUE)
-  print(f)
+# Download data
+for(f in seq_len(nrow(gdfiles))) {
+  cat(f, "/", nrow(gdfiles), " Downloading ", gdfiles$name[f], "...\n", sep = "")
+  drive_download(gdfiles[f,], overwrite = TRUE, path = file.path(data_dir, gdfiles$name[f]))
 }
 
+# Get a (fresh) list of the downloaded data we're working with
+# Filenames we want end with eight digits and no file extension
+files <- list.files(data_dir, pattern = "[0-9]{8}$", full.names = TRUE)
+HEADER_PATTERN <- "\"OPEN \\d\\.\\d\\.\\d"
+DATA_PATTERN <- "\\$STARTOFDATA\\$"
 
+# Scan through all the data files and read data into list structure
+filedata <- list()
+for(f in files) {
+  cat(" Reading ", f, "...\n", sep = "")
+  text.raw <- readLines(f, skipNul = TRUE)
+  data_start <- grep(DATA_PATTERN, text.raw)
+  
+  if(length(data_start)) {
+    # What makes this tricky is that there can be comments in the data frame
+    # Who on earth thought THAT was a good idea?!?
+    data_raw <- text.raw[data_start+1:length(text.raw)] %>% na.omit
+    line_lengths <- lapply(strsplit(data_raw, "\t"), length) %>% unlist
+    data_rows <- line_lengths == line_lengths[1]
+    comments = paste(which(!data_rows), data_raw[!data_rows], sep = ". ") %>%
+      gsub('\"', "", .)
+    
+    # OK, now read the data into a data frame and add the 'comments'
+    con <- textConnection(data_raw[data_rows])
+    read.table(con, header = TRUE, stringsAsFactors = FALSE) %>% 
+      mutate(Filename = basename(f),
+             Timestamp = text.raw[grep(HEADER_PATTERN, text.raw) + 1],
+             Comments = paste(comments, collapse = "; ")) ->
+      filedata[[f]]
+    close(con)
+  }
+}
 
-
-
-
-##################################################################
-## working with LICOR 6400 XT .txt files                        ##
-## advice from:                                                 ##
-## http://www.ericrscott.com/2018/01/17/li-cor-wrangling/       ##
-##################################################################
-text.raw <- read_file("licor.txt")
-header_pattern <- "\"OPEN \\d\\.\\d\\.\\d"
-data_pattern <- "\\$STARTOFDATA\\$"
-
-#splits into individual bouts
-raw_split <- str_split(text.raw, header_pattern, simplify = TRUE)
-
-#splits further to separate headers from actual data
-raw_split2 <- str_split(raw_split, data_pattern, simplify = FALSE)
-
-str(raw_split2)
-
-#extract just the second element, the actual data
-raw_split3 <- raw_split2 %>%
-  map(`[`, 2) %>% #equivalent to doing raw_split2[[i]][2] for every element "i"
-  flatten_chr() #converts to a vector
-
-#remove empty elements
-raw_split3 <- raw_split3[!is.na(raw_split3)]
-
-# use map() from package "purrr" to apply read_tsv() to every string in raw text vector
-# "skip = 1" gets rid of the unnecessary line "ins" and "outs"
-input <- raw_split3 %>%
-  map(read_tsv, skip = 1)
-
-input.all <- bind_rows(input)
-head(input.all, 10)
-
-#create a "safe" version of as.integer() that returns a list of a result and error
-safe_as.int <- safely(as.integer)
-
-#returns error for text remarks, returns value for integer observation numbers
-
-input.all <- input.all %>% 
-  mutate(#create a comment column to indicate if an "Obs" is actually a remark
-    comment = is.na(safe_as.int(Obs)$result), 
-    #copy those remarks to the remark column
-    remark = ifelse(comment == TRUE, Obs, NA),
-    #remove remarks from Obs column
-    Obs = ifelse(comment == FALSE, Obs, NA)) %>% 
-  #move the remark column the the begining
-  select(remark, everything()) %>% 
-  #remove the comment column.  We're done with it
-  select(-comment)
-head(input.all, 10)
-
-#you must replace NA with the literal string "NA" so str_* functions from stringr can deal with it
-input.all <- input.all %>% mutate(remark = str_replace_na(remark))
-
-IDpattern <- "[:lower:][:blank:]\\d+[:blank:][:lower:]"
-str_view(input.all$remark[1:10], IDpattern)
-
-#Now that I’ve figure out a pattern that matches the ID’s I can use str_extract() to move them to a new sampleID column.
-input.all <- input.all %>%
-  mutate(sampleID = str_extract(remark, IDpattern)) %>% 
-  select(sampleID, everything())
-head(input.all, 10)
-
-#get rid of other remarks and fill down the sample ID column
-output <- input.all %>% 
-  filter(!xor(remark == "NA" , is.na(sampleID))) %>%
-  fill(sampleID) %>% 
-  #get rid of the rest of the remark rows
-  filter(complete.cases(.)) %>% 
-  #get rid of the remark column
-  select(-remark)
-head(output, 10)
-
-#And finally, we have a cleaned data frame ready for use in analyses! You could go on to separate plot ID, plant ID and leaf ID using separate() from tidyr, and then do any necessary calculations, visualizations, and modeling with the resulting data frame.
+# Combine data into a single data frame for analysis
+filedata %>% 
+  bind_rows %>% 
+  as_tibble %>% 
+  mutate(Timestamp = mdy_hms(Timestamp)) %>%  # change to a POSIXct object
+  separate(Filename, into = c("Plot", "Species", "Sample", "Filename_date")) ->
+  licordata
