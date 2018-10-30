@@ -3,3 +3,6 @@
 .RData
 .Ruserdata
 .httr-oauth
+
+# Ignore downloaded data
+data/
