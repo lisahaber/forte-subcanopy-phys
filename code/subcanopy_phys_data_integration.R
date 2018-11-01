@@ -41,16 +41,18 @@ DATA_PATTERN <- "\\$STARTOFDATA\\$"
 filedata <- list()
 for(f in files) {
   cat(" Reading ", f, "...\n", sep = "")
-  text.raw <- readLines(f, skipNul = TRUE)
-  data_start <- grep(DATA_PATTERN, text.raw)
+  text_raw <- readLines(f, skipNul = TRUE)
+  data_start <- grep(DATA_PATTERN, text_raw)
+  first_comment <- text_raw[data_start - 1] # there's always a comment on this line
   
   if(length(data_start)) {
-    # What makes this tricky is that there can be comments in the data frame
-    # Who on earth thought THAT was a good idea?!?
-    data_raw <- text.raw[data_start+1:length(text.raw)] %>% na.omit
+    # What makes this tricky is that there can be additional comments WITHIN the data frame
+    # Who on earth thought that was a good idea?!?
+    data_raw <- text_raw[data_start+1:length(text.raw)] %>% na.omit
     line_lengths <- lapply(strsplit(data_raw, "\t"), length) %>% unlist
     data_rows <- line_lengths == line_lengths[1]
-    comments = paste(which(!data_rows), data_raw[!data_rows], sep = ". ") %>%
+    comments <- paste(which(!data_rows), data_raw[!data_rows], sep = ". ") %>%
+      paste(first_comment, ., sep = "; ") %>% 
       gsub('\"', "", .)
     
     # OK, now read the data into a data frame and add the 'comments'
