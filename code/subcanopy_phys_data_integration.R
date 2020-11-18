@@ -48,7 +48,7 @@ for(f in files) {
   if(length(data_start)) {
     # What makes this tricky is that there can be additional comments WITHIN the data frame
     # Who on earth thought that was a good idea?!?
-    data_raw <- text_raw[data_start+1:length(text.raw)] %>% na.omit
+    data_raw <- text_raw[data_start+1:length(text_raw)] %>% na.omit
     line_lengths <- lapply(strsplit(data_raw, "\t"), length) %>% unlist
     data_rows <- line_lengths == line_lengths[1]
     comments <- paste(which(!data_rows), data_raw[!data_rows], sep = ". ") %>%
@@ -59,7 +59,7 @@ for(f in files) {
     con <- textConnection(data_raw[data_rows])
     read.table(con, header = TRUE, stringsAsFactors = FALSE) %>% 
       mutate(Filename = basename(f),
-             Timestamp = text.raw[grep(HEADER_PATTERN, text.raw) + 1],
+             Timestamp = text_raw[grep(HEADER_PATTERN, text_raw) + 1],
              Comments = paste(comments, collapse = "; ")) ->
       filedata[[f]]
     close(con)
@@ -71,5 +71,17 @@ filedata %>%
   bind_rows %>% 
   as_tibble %>% 
   mutate(Timestamp = mdy_hms(Timestamp)) %>%  # change to a POSIXct object
-  separate(Filename, into = c("Plot", "Species", "Sample", "Filename_date")) ->
+  separate(Filename, into = c("Plot", "Species", "Sample", "Filename_date"), remove = FALSE) ->
   licordata
+
+
+##############################
+# get means of 5 observations per leaf to use in analysis
+
+licordata_means <- licordata %>%
+  group_by(Filename) %>%
+  summarize(MeanPhoto = mean(Photo))
+licordata_means  
+  
+write.table(licordata_means,"Mean_Photo_Cond_2018.txt",sep="\t",row.names=FALSE)  
+write.csv(licordata_means, "Mean_Photo_Cond_2018.csv", row.names = FALSE)  
